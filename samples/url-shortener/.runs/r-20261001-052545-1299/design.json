@@ -1,0 +1,109 @@
+{
+  "overview": "Add an optional ExpiresAt to ShortUrl. Create computes ExpiresAt = now + expiresInMinutes using TimeProvider. The redirect path caches a CachedLink (target + expiry) and evaluates expiry on every request, returning 410 Gone for expired links without recording a click. Metadata and create responses expose expiresAt. No new endpoints.",
+  "entities": [
+    {
+      "name": "ShortUrl",
+      "change": "modified",
+      "fields": [
+        {
+          "name": "ExpiresAt",
+          "type": "DateTimeOffset?",
+          "notes": "new nullable column; null = never expires (all existing rows)"
+        }
+      ]
+    },
+    {
+      "name": "ClickEvent",
+      "change": "unchanged",
+      "fields": []
+    }
+  ],
+  "endpoints": [
+    {
+      "method": "POST",
+      "route": "/api/v1/urls",
+      "description": "Create a short link; optional expiresInMinutes (1-525600)",
+      "responses": [
+        "201 UrlResponse incl. expiresAt",
+        "400 invalid expiry/url/alias",
+        "409 alias in use"
+      ]
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/urls/{code}",
+      "description": "Link metadata incl. expiresAt",
+      "responses": [
+        "200 UrlResponse",
+        "404"
+      ]
+    },
+    {
+      "method": "GET",
+      "route": "/{code}",
+      "description": "Redirect; expired links are gone",
+      "responses": [
+        "302 Location",
+        "404",
+        "410 Gone (expired)"
+      ]
+    }
+  ],
+  "nfrPatterns": [
+    {
+      "nfr": "Redirect latency must not regress (hot path)",
+      "pattern": "Cache-aside storing target + expiry; expiry evaluated in memory",
+      "buildingBlock": "ICacheService with CachedLink value",
+      "test": "UrlExpiryTests.Link_redirects_before_expiry_and_returns_410_after (cache hit after expiry still returns 410)"
+    },
+    {
+      "nfr": "Testable time-based behaviour",
+      "pattern": "Injected clock",
+      "buildingBlock": "TimeProvider (FakeTimeProvider in tests)",
+      "test": "UrlExpiryTests advances app.Clock"
+    },
+    {
+      "nfr": "Input abuse",
+      "pattern": "Validate at the edge",
+      "buildingBlock": "UrlValidator (expiresInMinutes range)",
+      "test": "UrlExpiryTests.Out_of_range_expiry_is_rejected / Invalid_expiry_returns_400"
+    },
+    {
+      "nfr": "Backward compatibility",
+      "pattern": "Additive, nullable schema and contract changes",
+      "buildingBlock": "Nullable ExpiresAt column, optional request/response fields",
+      "test": "UrlExpiryTests.Links_without_expiry_never_expire + existing UrlApiTests unchanged"
+    }
+  ],
+  "decisions": [
+    {
+      "title": "410 Gone for expired links",
+      "decision": "Return 410 with problem details instead of 404.",
+      "rationale": "Tells clients the link existed but is permanently unavailable; distinguishes expiry from typos.",
+      "alternatives": "404 (hides existence); redirect to an 'expired' page (needs UI, out of scope)."
+    },
+    {
+      "title": "Relative expiry input, absolute storage",
+      "decision": "Accept expiresInMinutes, store absolute ExpiresAt (UTC).",
+      "rationale": "Avoids client clock skew and time-zone mistakes; absolute storage makes the check a simple comparison.",
+      "alternatives": "Accept absolute expiresAt from clients."
+    },
+    {
+      "title": "Check expiry on every request",
+      "decision": "Cache the expiry with the target and compare on each redirect; keep cache TTL unchanged.",
+      "rationale": "A cache entry can never serve an expired link, and no DB round-trip is added on cache hits.",
+      "alternatives": "Shorten cache TTL to the remaining lifetime (more DB load, still racy across instances)."
+    },
+    {
+      "title": "Keep expired rows",
+      "decision": "Expired links are not deleted.",
+      "rationale": "Statistics stay queryable; purge policy can be added later with the retention setting.",
+      "alternatives": "Delete on expiry (loses analytics)."
+    }
+  ],
+  "schemaChange": true,
+  "risks": [
+    "Production databases need an EF Core migration adding the nullable expires_at column (development SQLite is recreated).",
+    "With a shared Redis cache, entries written by the previous version have a different shape; bump the cache key prefix when deploying."
+  ]
+}

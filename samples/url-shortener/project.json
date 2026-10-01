@@ -1,0 +1,67 @@
+{
+  "slug": "url-shortener",
+  "name": "URL Shortener",
+  "summary": "HTTP API that creates short links for long URLs (optionally with a custom alias), redirects visitors to the original URL and reports per-link click analytics.",
+  "aliases": [
+    "link shortener",
+    "short links",
+    "tiny url",
+    "url shortening service",
+    "expiring links",
+    "link expiry"
+  ],
+  "capabilities": [
+    "create short url",
+    "custom alias",
+    "redirect",
+    "click analytics",
+    "top referrers",
+    "clicks per day",
+    "link expiration"
+  ],
+  "entities": [
+    "ShortUrl",
+    "ClickEvent"
+  ],
+  "endpoints": [
+    "POST /api/v1/urls",
+    "GET /api/v1/urls/{code}",
+    "GET /api/v1/urls/{code}/stats",
+    "GET /{code}"
+  ],
+  "moduleMap": {
+    "src/App/Features/Urls/ShortUrl.cs": "Add nullable ExpiresAt and IsExpired(now) to ShortUrl; configuration unchanged (nullable column).",
+    "src/App/Features/Urls/ClickEvent.cs": "ClickEvent entity (Id, Code, OccurredAt, ReferrerHost, UserAgentFamily) and ClickEventConfiguration: table click_events, index (Code, Occurr…",
+    "src/App/Features/Urls/UrlContracts.cs": "Add CreateUrlRequest.ExpiresInMinutes, UrlResponse.ExpiresAt, ResolveStatus/ResolveResult and CachedLink.",
+    "src/App/Features/Urls/UrlRepository.cs": "IUrlRepository (TryAddAsync returns false on duplicate code, GetByCodeAsync) and EfUrlRepository using AppDbContext + IDbExecutor.",
+    "src/App/Features/Urls/ClickAnalyticsRepository.cs": "IClickAnalyticsRepository (AddBatchAsync in one transaction incl. ClickCount increments, GetStatsAsync daily/top referrers/user agents) and …",
+    "src/App/Features/Urls/ShortCodeGenerator.cs": "IShortCodeGenerator and Base62CodeGenerator (7 chars, RandomNumberGenerator).",
+    "src/App/Features/Urls/UrlValidator.cs": "Validate expiresInMinutes between 1 and MaxExpiryMinutes (525600).",
+    "src/App/Features/Urls/UrlService.cs": "Set ExpiresAt on create; ResolveAsync returns ResolveResult and checks expiry on every request using a cached CachedLink.",
+    "src/App/Features/Urls/ClickRecorder.cs": "ClickRecorder : IBatchHandler<ClickEvent> writing batches via IClickAnalyticsRepository; static helpers UserAgentFamily and ReferrerHost.",
+    "src/App/Features/Urls/UrlEndpoints.cs": "Redirect returns 410 Gone for expired links without recording a click; responses include ExpiresAt.",
+    "src/App/Features/FeatureRegistration.cs": "Register repositories, generator, UrlService and the ClickEvent background queue; map URL endpoints."
+  },
+  "deploymentProfile": "local",
+  "currentVersion": "v2",
+  "versions": [
+    {
+      "version": "v1",
+      "changeType": "greenfield",
+      "requirement": "Build a URL shortener service. Users can create a short link for a long URL, optionally choosing a custom alias. Visiting the short link redirects to the origin…",
+      "runId": "r-20261001-052526-884b",
+      "date": "2026-10-01T05:25:41.2963824+00:00",
+      "summary": "URL Shortener with click analytics"
+    },
+    {
+      "version": "v2",
+      "changeType": "brownfield",
+      "requirement": "Add link expiration to the URL shortener: when creating a short link the caller may set an optional expiry in minutes. Once a link has expired it must no longer…",
+      "runId": "r-20261001-052545-1299",
+      "date": "2026-10-01T05:26:00.1324269+00:00",
+      "summary": "Optional link expiration"
+    }
+  ],
+  "sourceHash": "b47faa5e91e1dd5940173d13103f0cea5405b5bbf6fb44044cbbbc5b8c84cccf",
+  "nextVersionNumber": 3
+}

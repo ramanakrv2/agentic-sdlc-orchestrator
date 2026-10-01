@@ -1,0 +1,68 @@
+{
+  "tasks": [
+    {
+      "id": "T1",
+      "kind": "code",
+      "path": "src/App/Features/Urls/ShortUrl.cs",
+      "action": "modify",
+      "description": "Add nullable ExpiresAt and IsExpired(now) to ShortUrl; configuration unchanged (nullable column).",
+      "dependsOn": []
+    },
+    {
+      "id": "T2",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlContracts.cs",
+      "action": "modify",
+      "description": "Add CreateUrlRequest.ExpiresInMinutes, UrlResponse.ExpiresAt, ResolveStatus/ResolveResult and CachedLink.",
+      "dependsOn": [
+        "T1"
+      ]
+    },
+    {
+      "id": "T3",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlValidator.cs",
+      "action": "modify",
+      "description": "Validate expiresInMinutes between 1 and MaxExpiryMinutes (525600).",
+      "dependsOn": [
+        "T2"
+      ]
+    },
+    {
+      "id": "T4",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlService.cs",
+      "action": "modify",
+      "description": "Set ExpiresAt on create; ResolveAsync returns ResolveResult and checks expiry on every request using a cached CachedLink.",
+      "dependsOn": [
+        "T1",
+        "T2",
+        "T3"
+      ]
+    },
+    {
+      "id": "T5",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlEndpoints.cs",
+      "action": "modify",
+      "description": "Redirect returns 410 Gone for expired links without recording a click; responses include ExpiresAt.",
+      "dependsOn": [
+        "T2",
+        "T4"
+      ]
+    },
+    {
+      "id": "T6",
+      "kind": "test",
+      "path": "tests/App.Tests/Features/Urls/UrlExpiryTests.cs",
+      "action": "create",
+      "description": "Expiry tests with FakeTimeProvider: 302 before / 410 after expiry (cache hit), metadata expiresAt, no-expiry links, validation of range.",
+      "dependsOn": [
+        "T1",
+        "T2",
+        "T3",
+        "T5"
+      ]
+    }
+  ]
+}

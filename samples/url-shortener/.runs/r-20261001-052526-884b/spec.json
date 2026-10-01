@@ -1,0 +1,68 @@
+{
+  "title": "URL Shortener with click analytics",
+  "projectName": "URL Shortener",
+  "summary": "HTTP API that creates short links for long URLs (optionally with a custom alias), redirects visitors to the original URL and reports per-link click analytics.",
+  "aliases": [
+    "link shortener",
+    "short links",
+    "tiny url",
+    "url shortening service"
+  ],
+  "capabilities": [
+    "create short url",
+    "custom alias",
+    "redirect",
+    "click analytics",
+    "top referrers",
+    "clicks per day"
+  ],
+  "functionalRequirements": [
+    {
+      "id": "FR-1",
+      "description": "Create a short link for an absolute http/https URL; the service generates a unique short code.",
+      "acceptance": "POST /api/v1/urls with a valid URL returns 201 with the code, the short URL and a Location header; invalid URLs (non-http(s), malformed, embedded credentials, longer than 2048 chars) return 400 problem details."
+    },
+    {
+      "id": "FR-2",
+      "description": "Optionally choose a custom alias instead of a generated code.",
+      "acceptance": "Aliases of 4-32 characters [A-Za-z0-9_-] are accepted; an alias already in use returns 409; reserved words (api, health, ops) are rejected with 400."
+    },
+    {
+      "id": "FR-3",
+      "description": "Visiting a short link redirects to the original URL.",
+      "acceptance": "GET /{code} returns 302 with Location set to the target URL; an unknown code returns 404."
+    },
+    {
+      "id": "FR-4",
+      "description": "Record every redirect as a click (timestamp, referrer host, user-agent family) without slowing the redirect.",
+      "acceptance": "Clicks are recorded asynchronously and appear in the statistics within a few seconds; no raw IP address is stored."
+    },
+    {
+      "id": "FR-5",
+      "description": "Report click analytics per link: total clicks, clicks per day and top referrers.",
+      "acceptance": "GET /api/v1/urls/{code}/stats returns totalClicks, daily counts for the requested window (default 30 days) and the top 10 referrers; unknown code returns 404."
+    },
+    {
+      "id": "FR-6",
+      "description": "Look up a short link's metadata.",
+      "acceptance": "GET /api/v1/urls/{code} returns code, short URL, target URL, creation time and click count; unknown code returns 404."
+    }
+  ],
+  "nfr": {
+    "notes": "Must stay fast and reliable under load: redirects are the hot, read-heavy path; analytics must not add latency to redirects."
+  },
+  "ambiguities": [],
+  "clarifications": [],
+  "assumptions": [
+    "Anonymous API: link creation needs no authentication in this version (abuse is limited by per-client rate limiting).",
+    "Redirects use 302 (not 301) so browsers do not cache them and every click is counted.",
+    "Links do not expire in this version.",
+    "Analytics store referrer host and user-agent family only (data minimisation)."
+  ],
+  "outOfScope": [
+    "User accounts and link ownership",
+    "Link editing or deletion",
+    "QR codes",
+    "Custom domains"
+  ]
+}

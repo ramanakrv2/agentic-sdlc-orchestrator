@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "ms-dotnettools.csdevkit",
+    "ms-dotnettools.csharp",
+    "redhat.vscode-yaml",
+    "humao.rest-client",
+    "bierner.markdown-mermaid"
+  ]
+}

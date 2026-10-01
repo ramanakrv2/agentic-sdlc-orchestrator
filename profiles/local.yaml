@@ -1,0 +1,25 @@
+id: local
+name: Local machine (single host)
+rank: 1
+capacity:
+  # Measured with tools/LoadGen against the generated URL shortener on an i5-1155G7 laptop (cached redirects);
+  # deliberately conservative because the load generator shares the CPU.
+  maxPeakRps: 400
+  maxWriteRps: 60
+  maxStorageGb: 50
+  maxAvailability: 99.0
+  horizontalScaling: false
+  basis: "Measured on a 4-core laptop: SQLite WAL (single writer), in-memory cache, no redundancy."
+providers:
+  database: Sqlite
+  cache: Memory
+  queue: In-process channel
+strategies:
+  - "Stateless API instances behind the YARP gateway (scripts/run-cluster.ps1) to demonstrate scale-out on one host."
+  - "Cache-aside on the read path (ICacheService) — redirects rarely touch SQLite."
+  - "Analytics written off the request path in batches (bounded queue with load shedding)."
+  - "SQLite WAL: many concurrent readers, one writer — the write path is the ceiling."
+  - "Rate limiting per client and request timeouts protect the single host."
+artifacts:
+  - deploy/local/README.md
+validation: "Run end-to-end locally; LoadGen demos in docs/SCALING.md."

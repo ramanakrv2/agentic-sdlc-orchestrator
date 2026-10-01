@@ -1,0 +1,39 @@
+{
+  "summary": "Expiry touches the ShortUrl entity (new nullable column), the create contract and validation, the cached value on the redirect hot path, and the redirect/metadata responses. Analytics, code generation and the repository are unaffected.",
+  "files": [
+    {
+      "path": "src/App/Features/Urls/ShortUrl.cs",
+      "change": "Add nullable ExpiresAt (DateTimeOffset?) and an IsExpired(now) helper.",
+      "risk": "medium"
+    },
+    {
+      "path": "src/App/Features/Urls/UrlContracts.cs",
+      "change": "CreateUrlRequest.ExpiresInMinutes, UrlResponse.ExpiresAt, ResolveStatus/ResolveResult for the redirect path, CachedLink cache value.",
+      "risk": "medium"
+    },
+    {
+      "path": "src/App/Features/Urls/UrlValidator.cs",
+      "change": "Validate expiresInMinutes range (1..525600).",
+      "risk": "low"
+    },
+    {
+      "path": "src/App/Features/Urls/UrlService.cs",
+      "change": "Set ExpiresAt on create; ResolveAsync returns Found/Expired/NotFound and checks expiry on cache hits; cache stores target + expiry.",
+      "risk": "high"
+    },
+    {
+      "path": "src/App/Features/Urls/UrlEndpoints.cs",
+      "change": "Redirect returns 410 Gone for expired links (no click recorded); responses include expiresAt.",
+      "risk": "medium"
+    }
+  ],
+  "dataModelChange": true,
+  "hotPaths": [
+    "GET /{code} redirect (cache lookup + expiry check)"
+  ],
+  "risks": [
+    "Cached entries created before this change hold only the target URL; the cache value type changes, so old entries must not be read as the new type (in-memory cache is empty after deploy; Redis would need a key-version bump).",
+    "Schema change on short_urls (new nullable column): development SQLite is recreated automatically; a production database needs an EF migration.",
+    "A cached link must not outlive its expiry: expiry has to be evaluated on every request, not only on cache misses."
+  ]
+}
