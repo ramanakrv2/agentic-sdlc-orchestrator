@@ -89,6 +89,20 @@ public sealed class AgentTests
     }
 
     [Fact]
+    public void Brownfield_docs_merge_updates_existing_endpoint_rows_and_appends_new_ones()
+    {
+        var existing = "| Method | Route | Description |\n|---|---|---|\n| POST | `/api/v1/urls` | Create |\n| GET | `/{code}` | Redirect |\n\n## Run locally";
+
+        var merged = DocsNode.UpsertEndpointRows(existing,
+            [new EndpointDesign { Method = "GET", Route = "/{code}", Description = "Redirect; 410 when expired" },
+             new EndpointDesign { Method = "DELETE", Route = "/api/v1/urls/{code}", Description = "Delete" }], withResponses: false);
+
+        merged.ShouldContain("| POST | `/api/v1/urls` | Create |");                  // untouched v1 row kept
+        merged.ShouldContain("| GET | `/{code}` | Redirect; 410 when expired |");     // changed row replaced
+        merged.IndexOf("DELETE").ShouldBeLessThan(merged.IndexOf("## Run locally")); // new row appended inside the table
+    }
+
+    [Fact]
     public void Extracts_code_from_fenced_llm_output()
     {
         AgentServices.ExtractCode("Here you go:\n```csharp\nnamespace A;\nclass B {}\n```\nHope it helps").ShouldBe("namespace A;\nclass B {}\n");

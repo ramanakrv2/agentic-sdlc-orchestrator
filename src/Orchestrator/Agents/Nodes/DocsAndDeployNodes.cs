@@ -17,6 +17,10 @@ public sealed class DocsNode(AgentServices s, bool deterministicReadme = false) 
         var spec = AgentServices.Read<Spec>(run, ArtifactKeys.Spec);
         var design = AgentServices.Read<Design>(run, ArtifactKeys.Design);
         var nfr = AgentServices.Read<NfrArtifact>(run, ArtifactKeys.Nfr);
+        var workspace = AgentServices.Read<WorkspaceArtifact>(run, ArtifactKeys.Workspace);
+
+        if (workspace.Mode == "brownfield")
+            return await MergeAsync(run, spec, design, nfr, workspace, ct);
 
         string readme;
         if (deterministicReadme)
@@ -38,6 +42,90 @@ public sealed class DocsNode(AgentServices s, bool deterministicReadme = false) 
             .With(ArtifactKeys.File("docs/API.md"), Api(design))
             .With(ArtifactKeys.File("app.http"), Http(design))
             .Because(deterministicReadme ? "README generated from template (fallback)." : "README written by docs agent.");
+    }
+
+    /// <summary>
+    /// Brownfield: documentation is cumulative. The pre-run docs (from the checkpoint, so retries see a stable base) are kept
+    /// and the change is merged in: a "Changes in vN" README section, endpoint tables updated by method+route, and a new
+    /// architecture change-log section whose ADRs continue the existing numbering.
+    /// </summary>
+    private async Task<NodeResult> MergeAsync(RunContext run, Spec spec, Design design, NfrArtifact nfr, WorkspaceArtifact workspace, CancellationToken ct)
+    {
+        var card = await s.Projects.GetAsync(workspace.Slug, ct);
+        var version = $"v{card?.NextVersionNumber ?? 2}";
+        var baseDir = Path.Combine(s.ProjectDir(run), ".versions", workspace.Checkpoint);
+        string Existing(string path) => ProjectFiles.Read(baseDir, path) ?? ProjectFiles.Read(s.ProjectDir(run), path) ?? "";
+
+        // README: keep everything, merge the API table, insert a change section before the run instructions.
+        var readme = Existing("README.md");
+        readme = UpsertEndpointRows(readme, design.Endpoints, withResponses: readme.Contains("| Responses |"));
+        var change = new StringBuilder($"## Changes in {version} — {spec.Title}\n{spec.Summary}\n\n");
+        foreach (var f in spec.FunctionalRequirements) change.AppendLine($"- **{f.Id}** {f.Description} _(acceptance: {f.Acceptance})_");
+        change.AppendLine();
+        var anchor = Regex.Match(readme, "^## Run(ning)? locally", RegexOptions.Multiline);
+        readme = anchor.Success ? readme.Insert(anchor.Index, change.ToString()) : readme.TrimEnd() + "\n\n" + change;
+
+        // ARCHITECTURE: append a versioned change section; ADR numbers continue.
+        var architecture = Existing("docs/ARCHITECTURE.md");
+        var nextAdr = Regex.Matches(architecture, "^### ADR-", RegexOptions.Multiline).Count + 1;
+        var section = new StringBuilder($"\n## Change log — {version}: {spec.Title}\n\n{design.Overview}\n\n");
+        var changedEntities = design.Entities.Where(e => e.Change != "unchanged").ToList();
+        if (changedEntities.Count > 0)
+        {
+            section.AppendLine("### Data model changes");
+            foreach (var e in changedEntities)
+            {
+                section.AppendLine($"**{e.Name}** ({e.Change})\n\n| Field | Type | Notes |\n|---|---|---|");
+                foreach (var f in e.Fields) section.AppendLine($"| {f.Name} | {f.Type} | {f.Notes} |");
+                section.AppendLine();
+            }
+        }
+        section.AppendLine("### NFR traceability for this change\n| NFR | Pattern | Building block | Verified by |\n|---|---|---|---|");
+        foreach (var p in design.NfrPatterns) section.AppendLine($"| {p.Nfr} | {p.Pattern} | {p.BuildingBlock} | {p.Test} |");
+        section.AppendLine();
+        foreach (var d in design.Decisions)
+            section.AppendLine($"### ADR-{nextAdr++:000}: {d.Title} ({version})\n- **Decision:** {d.Decision}\n- **Rationale:** {d.Rationale}\n- **Alternatives considered:** {d.Alternatives ?? "n/a"}\n");
+        if (design.Risks.Count > 0)
+        {
+            section.AppendLine("### Risks introduced");
+            foreach (var r in design.Risks) section.AppendLine($"- {r}");
+        }
+        section.AppendLine($"\nDeployment profile **{nfr.Profile}**, capacity verdict **{nfr.Verdict}**.");
+        architecture = architecture.TrimEnd() + "\n" + section;
+
+        // API.md and app.http: merge endpoints; append requests for new routes only.
+        var api = UpsertEndpointRows(Existing("docs/API.md"), design.Endpoints, withResponses: true);
+        var http = Existing("app.http");
+        var newEndpoints = design.Endpoints.Where(e => !http.Contains($"{e.Method.ToUpperInvariant()} {{{{base}}}}{Regex.Replace(e.Route, "\\{[^}]+\\}", "REPLACE_ME")}")).ToList();
+        if (newEndpoints.Count > 0) http = http.TrimEnd() + "\n\n" + Http(new Design { Endpoints = newEndpoints }).Replace("@base = http://localhost:5080\n\n", "");
+
+        return NodeResult.Ok($"Docs merged for {version}: README change section, {design.Decisions.Count} ADRs appended, endpoint tables updated")
+            .With(ArtifactKeys.File("README.md"), readme.TrimEnd() + "\n")
+            .With(ArtifactKeys.File("docs/ARCHITECTURE.md"), architecture)
+            .With(ArtifactKeys.File("docs/API.md"), api.TrimEnd() + "\n")
+            .With(ArtifactKeys.File("app.http"), http.TrimEnd() + "\n")
+            .Because($"Brownfield docs merged into existing documentation ({version}); previous content preserved.");
+    }
+
+    /// <summary>Updates rows of a markdown endpoint table keyed by method + route; appends rows for new endpoints.</summary>
+    public static string UpsertEndpointRows(string markdown, IEnumerable<EndpointDesign> endpoints, bool withResponses)
+    {
+        var lines = markdown.Replace("\r\n", "\n").Split('\n').ToList();
+        int lastRow = -1;
+        for (var i = 0; i < lines.Count; i++)
+            if (Regex.IsMatch(lines[i], @"^\| (GET|POST|PUT|PATCH|DELETE) \| `")) lastRow = i;
+
+        foreach (var e in endpoints)
+        {
+            var row = withResponses
+                ? $"| {e.Method.ToUpperInvariant()} | `{e.Route}` | {e.Description} | {string.Join(", ", e.Responses)} |"
+                : $"| {e.Method.ToUpperInvariant()} | `{e.Route}` | {e.Description} |";
+            var key = $"| {e.Method.ToUpperInvariant()} | `{e.Route}` |";
+            var idx = lines.FindIndex(l => l.StartsWith(key, StringComparison.Ordinal));
+            if (idx >= 0) lines[idx] = row;
+            else if (lastRow >= 0) lines.Insert(++lastRow, row);
+        }
+        return string.Join("\n", lines);
     }
 
     public static readonly IGate Gate = Orchestrator.Core.Engine.Gate.Sync("docs", (_, r) =>

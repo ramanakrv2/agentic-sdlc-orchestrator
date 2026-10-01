@@ -49,16 +49,16 @@
       "version": "v1",
       "changeType": "greenfield",
       "requirement": "Build a URL shortener service. Users can create a short link for a long URL, optionally choosing a custom alias. Visiting the short link redirects to the origin…",
-      "runId": "r-20261001-051952-0823",
-      "date": "2026-10-01T05:20:03.2302561+00:00",
+      "runId": "r-20261001-052526-884b",
+      "date": "2026-10-01T05:25:41.2963824+00:00",
       "summary": "URL Shortener with click analytics"
     },
     {
       "version": "v2",
       "changeType": "brownfield",
       "requirement": "Add link expiration to the URL shortener: when creating a short link the caller may set an optional expiry in minutes. Once a link has expired it must no longer…",
-      "runId": "r-20261001-052005-f692",
-      "date": "2026-10-01T05:20:16.6427765+00:00",
+      "runId": "r-20261001-052545-1299",
+      "date": "2026-10-01T05:26:00.1324269+00:00",
       "summary": "Optional link expiration"
     }
   ],

@@ -1,6 +1,6 @@
 @base = http://localhost:5080
 
-### Create a short link; optional expiresInMinutes (1-525600)
+### Create a short link (optional customAlias)
 POST {{base}}/api/v1/urls
 Content-Type: application/json
 
@@ -8,12 +8,14 @@ Content-Type: application/json
   "url": "https://example.com"
 }
 
-### Link metadata incl. expiresAt
+### Link metadata
 GET {{base}}/api/v1/urls/REPLACE_ME
 
-### Redirect; expired links are gone
+### Click analytics (total, per day, top referrers); ?days=1..365, default 30
+GET {{base}}/api/v1/urls/REPLACE_ME/stats
+
+### Redirect to the target URL and record the click asynchronously
 GET {{base}}/REPLACE_ME
 
 ### Ops
 GET {{base}}/ops/stats
-
