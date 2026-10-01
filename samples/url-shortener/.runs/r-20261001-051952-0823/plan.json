@@ -1,0 +1,149 @@
+{
+  "tasks": [
+    {
+      "id": "T1",
+      "kind": "code",
+      "path": "src/App/Features/Urls/ShortUrl.cs",
+      "action": "create",
+      "description": "ShortUrl entity (Id, Code, TargetUrl, CreatedAt, ClickCount) and ShortUrlConfiguration: table short_urls, unique index on Code, max lengths.",
+      "dependsOn": []
+    },
+    {
+      "id": "T2",
+      "kind": "code",
+      "path": "src/App/Features/Urls/ClickEvent.cs",
+      "action": "create",
+      "description": "ClickEvent entity (Id, Code, OccurredAt, ReferrerHost, UserAgentFamily) and ClickEventConfiguration: table click_events, index (Code, OccurredAt).",
+      "dependsOn": []
+    },
+    {
+      "id": "T3",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlContracts.cs",
+      "action": "create",
+      "description": "Records CreateUrlRequest, UrlResponse, DailyClicks, ReferrerClicks, UrlStatsResponse; enum CreateStatus; record CreateResult.",
+      "dependsOn": [
+        "T1"
+      ]
+    },
+    {
+      "id": "T4",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlRepository.cs",
+      "action": "create",
+      "description": "IUrlRepository (TryAddAsync returns false on duplicate code, GetByCodeAsync) and EfUrlRepository using AppDbContext + IDbExecutor.",
+      "dependsOn": [
+        "T1"
+      ]
+    },
+    {
+      "id": "T5",
+      "kind": "code",
+      "path": "src/App/Features/Urls/ClickAnalyticsRepository.cs",
+      "action": "create",
+      "description": "IClickAnalyticsRepository (AddBatchAsync in one transaction incl. ClickCount increments, GetStatsAsync daily/top referrers/user agents) and EfClickAnalyticsRepository.",
+      "dependsOn": [
+        "T1",
+        "T2",
+        "T3"
+      ]
+    },
+    {
+      "id": "T6",
+      "kind": "code",
+      "path": "src/App/Features/Urls/ShortCodeGenerator.cs",
+      "action": "create",
+      "description": "IShortCodeGenerator and Base62CodeGenerator (7 chars, RandomNumberGenerator).",
+      "dependsOn": []
+    },
+    {
+      "id": "T7",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlValidator.cs",
+      "action": "create",
+      "description": "Static UrlValidator.Validate(CreateUrlRequest): http/https absolute, <=2048 chars, no credentials; alias pattern and reserved words.",
+      "dependsOn": [
+        "T3"
+      ]
+    },
+    {
+      "id": "T8",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlService.cs",
+      "action": "create",
+      "description": "IUrlService/UrlService: CreateAsync (validation, alias, collision retry, cache warm), ResolveAsync (cache-aside), GetAsync, GetStatsAsync.",
+      "dependsOn": [
+        "T3",
+        "T4",
+        "T5",
+        "T6",
+        "T7"
+      ]
+    },
+    {
+      "id": "T9",
+      "kind": "code",
+      "path": "src/App/Features/Urls/ClickRecorder.cs",
+      "action": "create",
+      "description": "ClickRecorder : IBatchHandler<ClickEvent> writing batches via IClickAnalyticsRepository; static helpers UserAgentFamily and ReferrerHost.",
+      "dependsOn": [
+        "T2",
+        "T5"
+      ]
+    },
+    {
+      "id": "T10",
+      "kind": "code",
+      "path": "src/App/Features/Urls/UrlEndpoints.cs",
+      "action": "create",
+      "description": "MapUrlEndpoints: POST/GET /api/v1/urls, GET /api/v1/urls/{code}/stats, GET /{code} redirect (302) enqueuing ClickEvent.",
+      "dependsOn": [
+        "T2",
+        "T3",
+        "T8",
+        "T9"
+      ]
+    },
+    {
+      "id": "T11",
+      "kind": "code",
+      "path": "src/App/Features/FeatureRegistration.cs",
+      "action": "modify",
+      "description": "Register repositories, generator, UrlService and the ClickEvent background queue; map URL endpoints.",
+      "dependsOn": [
+        "T4",
+        "T5",
+        "T6",
+        "T8",
+        "T9",
+        "T10"
+      ]
+    },
+    {
+      "id": "T12",
+      "kind": "test",
+      "path": "tests/App.Tests/Features/Urls/UrlUnitTests.cs",
+      "action": "create",
+      "description": "Unit tests: code generator format/uniqueness, URL and alias validation, user-agent and referrer parsing.",
+      "dependsOn": [
+        "T3",
+        "T6",
+        "T7",
+        "T9"
+      ]
+    },
+    {
+      "id": "T13",
+      "kind": "test",
+      "path": "tests/App.Tests/Features/Urls/UrlApiTests.cs",
+      "action": "create",
+      "description": "Integration tests via TestApp: create 201/400/409, redirect 302/404, metadata, async click stats, parallel creates produce unique codes.",
+      "dependsOn": [
+        "T3",
+        "T6",
+        "T10",
+        "T11"
+      ]
+    }
+  ]
+}

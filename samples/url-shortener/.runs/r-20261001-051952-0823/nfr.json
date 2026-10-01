@@ -1,0 +1,13 @@
+{
+  "profile": "local",
+  "verdict": "Feasible",
+  "requestsPerDay": 1000000,
+  "peakRps": 115.7,
+  "availabilityTarget": 99,
+  "overridden": false,
+  "assumptions": [
+    "Read:write ratio 100:1 (typical for read-heavy services).",
+    "Data retention 90 days.",
+    "Peak traffic = 10× the daily average."
+  ]
+}

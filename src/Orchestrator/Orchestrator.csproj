@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Single library, layered by folder (namespaces unchanged):
+      Core/            engine, governance, policy, metrics, capacity, routing — no I/O dependencies
+      Infrastructure/  EF Core stores, workspace registry, Semantic Kernel + Polly LLM client, replay cache
+      Agents/          SDLC node handlers, prompts, pipeline definition
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.80.1" />
+    <PackageReference Include="Polly.Core" Version="8.8.0" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+
+</Project>

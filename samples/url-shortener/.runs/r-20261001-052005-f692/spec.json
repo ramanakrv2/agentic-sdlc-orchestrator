@@ -1,0 +1,43 @@
+{
+  "title": "Optional link expiration",
+  "projectName": "URL Shortener",
+  "summary": "Callers can give a short link an optional lifetime; expired links stop redirecting (410 Gone) and metadata exposes the expiry time.",
+  "aliases": [
+    "expiring links",
+    "link expiry"
+  ],
+  "capabilities": [
+    "link expiration"
+  ],
+  "functionalRequirements": [
+    {
+      "id": "FR-7",
+      "description": "POST /api/v1/urls accepts an optional expiresInMinutes; the link expires that many minutes after creation.",
+      "acceptance": "expiresInMinutes between 1 and 525600 (one year) is accepted; 0, negative or larger values return 400 problem details; omitting it creates a link that never expires."
+    },
+    {
+      "id": "FR-8",
+      "description": "An expired link no longer redirects.",
+      "acceptance": "GET /{code} on an expired link returns 410 Gone (problem details) and records no click; before expiry it still returns 302. Expiry is enforced even when the link is cached."
+    },
+    {
+      "id": "FR-9",
+      "description": "Link metadata shows when the link expires.",
+      "acceptance": "GET /api/v1/urls/{code} and the 201 create response include expiresAt (null when the link never expires)."
+    }
+  ],
+  "nfr": {
+    "notes": "Expiry check is on the redirect hot path and must not add a database round-trip on cache hits."
+  },
+  "ambiguities": [],
+  "clarifications": [],
+  "assumptions": [
+    "Existing links (created before this change) never expire.",
+    "Expired links are kept (not deleted) so their statistics remain available.",
+    "Expiry is evaluated against the server clock (UTC); no grace period."
+  ],
+  "outOfScope": [
+    "Changing or removing the expiry of an existing link",
+    "Automatic purge of expired links"
+  ]
+}

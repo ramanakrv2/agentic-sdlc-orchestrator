@@ -1,0 +1,10 @@
+{
+  "kind": "brownfield",
+  "projectSlug": "url-shortener",
+  "confidence": 0.775,
+  "rationale": "Partial match; human confirmation required. Intent=Change. Human selected: url-shortener.",
+  "candidates": [
+    "url-shortener (score 0.30; matched: link,url,shorten,creat,short,redirect)"
+  ],
+  "decidedBy": "human"
+}

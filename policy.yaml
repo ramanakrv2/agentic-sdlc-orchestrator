@@ -1,0 +1,92 @@
+# Policy-as-code for the agentic SDLC orchestrator.
+# Autonomy levels: auto (agent proceeds) | notify (proceeds, audited) | approve (human checkpoint) | forbidden (blocked).
+version: 1
+
+autonomy:
+  default: auto
+  actions:
+    project.create: notify          # new folder from the locked template
+    project.modify: approve         # brownfield: changing existing code needs a human go-ahead
+    spec.approve: approve           # normalised requirement + NFR/capacity verdict
+    design.review: notify
+    schema.change: approve          # persisted data model changes in an existing project
+    deploy.profile.change: approve  # moving an existing service to a different deployment target
+    feasibility.override: approve   # proceeding although capacity analysis says not feasible
+    review.high-risk: approve       # reviewer found high-severity issues
+    release.publish: approve        # final quality control before a version is published
+    secrets.write: forbidden
+    ci.modify: forbidden
+
+paths:
+  protected:
+    - "**/.github/**"
+    - "**/*.pfx"
+    - "**/*.key"
+    - "**/appsettings.Production.json"
+  templateLocked:
+    - "src/App/Program.cs"
+    - "src/App/appsettings.json"
+    - "src/App/*.csproj"
+    - "src/App/Platform/**"
+    - "tests/App.Tests/*.csproj"
+    - "tests/App.Tests/Platform/**"
+    - "tests/App.Tests/Support/**"
+
+dependencies:
+  allowlist:
+    - "Microsoft.*"
+    - "System.*"
+    - "Npgsql.EntityFrameworkCore.PostgreSQL"
+    - "Polly*"
+    - "Serilog*"
+    - "xunit*"
+    - "Shouldly"
+    - "NSubstitute"
+    - "coverlet.*"
+
+secrets:
+  patterns:
+    - "(?i)(password|pwd)\\s*=\\s*[^;\\s\"'$]{6,}"
+    - "(?i)api[_-]?key\\s*[:=]\\s*[\"'][A-Za-z0-9_\\-]{16,}[\"']"
+    - "AKIA[0-9A-Z]{16}"
+    - "-----BEGIN (RSA |EC )?PRIVATE KEY-----"
+    - "(?i)AccountKey=[A-Za-z0-9+/=]{20,}"
+
+limits:
+  maxFileBytes: 60000
+  maxFilesPerRun: 30
+  retryBudgetPerRun: 10
+  maxSemanticAttempts: 3
+  maxLoopBacks: 2
+
+quality:
+  minLineCoverage: 70
+  requireTestsPass: true
+
+# Static conventions checked on every generated file (scalability, resilience, maintainability).
+conventions:
+  - id: no-sync-over-async
+    appliesTo: "src/**/*.cs"
+    pattern: "\\.Result\\b|\\.Wait\\(\\)|GetAwaiter\\(\\)\\.GetResult\\(\\)"
+    message: "Blocking on async code (.Result/.Wait()) causes thread-pool starvation under load; use await."
+    category: scalability
+  - id: stateless-instances
+    appliesTo: "src/App/Features/**/*.cs"
+    pattern: "^\\s*(public|private|internal|protected)?\\s*static\\s+(?!readonly|class|async|partial|extern|void)[\\w<>,\\[\\]?]+\\s+\\w+\\s*(=(?!>)|;)"
+    message: "Mutable static state breaks horizontal scaling (state is per instance); use the cache/DB or make it readonly."
+    category: scalability
+  - id: endpoints-no-dbcontext
+    appliesTo: "src/App/Features/**/*Endpoints.cs"
+    pattern: "AppDbContext"
+    message: "Endpoints must go through a service/repository interface, never AppDbContext directly."
+    category: maintainability
+  - id: use-timeprovider
+    appliesTo: "src/App/Features/**/*.cs"
+    pattern: "DateTime(Offset)?\\.(Now|UtcNow)"
+    message: "Inject TimeProvider instead of DateTime.Now/UtcNow so time-dependent logic is testable."
+    category: testability
+  - id: no-raw-sql-concatenation
+    appliesTo: "src/**/*.cs"
+    pattern: "FromSqlRaw\\(\\s*\\$|ExecuteSqlRaw\\(\\s*\\$"
+    message: "Interpolated raw SQL is an injection risk; use FromSql/ExecuteSql with parameters."
+    category: security

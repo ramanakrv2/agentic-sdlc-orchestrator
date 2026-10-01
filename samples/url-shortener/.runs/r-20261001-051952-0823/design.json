@@ -1,0 +1,195 @@
+{
+  "overview": "A single 'Urls' feature on the platform kit. Writes (create link) go through IUrlService → IUrlRepository (EF Core, unique index on Code). The redirect hot path resolves codes through ICacheService (cache-aside, 10 min TTL) and enqueues a ClickEvent on IBackgroundQueue<ClickEvent>, so analytics never add latency; ClickRecorder writes clicks in batches and increments a denormalised ClickCount. Stats are aggregated from click events per link.",
+  "entities": [
+    {
+      "name": "ShortUrl",
+      "change": "new",
+      "fields": [
+        {
+          "name": "Id",
+          "type": "long",
+          "notes": "PK"
+        },
+        {
+          "name": "Code",
+          "type": "string(32)",
+          "notes": "unique index; generated base62 (7 chars) or custom alias"
+        },
+        {
+          "name": "TargetUrl",
+          "type": "string(2048)",
+          "notes": "absolute http/https"
+        },
+        {
+          "name": "CreatedAt",
+          "type": "DateTimeOffset",
+          "notes": "from TimeProvider"
+        },
+        {
+          "name": "ClickCount",
+          "type": "long",
+          "notes": "denormalised total, incremented per batch"
+        }
+      ]
+    },
+    {
+      "name": "ClickEvent",
+      "change": "new",
+      "fields": [
+        {
+          "name": "Id",
+          "type": "long",
+          "notes": "PK"
+        },
+        {
+          "name": "Code",
+          "type": "string(32)",
+          "notes": "index (Code, OccurredAt)"
+        },
+        {
+          "name": "OccurredAt",
+          "type": "DateTimeOffset",
+          "notes": ""
+        },
+        {
+          "name": "ReferrerHost",
+          "type": "string?(255)",
+          "notes": "host only, no path/query"
+        },
+        {
+          "name": "UserAgentFamily",
+          "type": "string(32)",
+          "notes": "Chrome/Firefox/Edge/Safari/Bot/curl/Other; no raw UA, no IP"
+        }
+      ]
+    }
+  ],
+  "endpoints": [
+    {
+      "method": "POST",
+      "route": "/api/v1/urls",
+      "description": "Create a short link (optional customAlias)",
+      "responses": [
+        "201 UrlResponse + Location",
+        "400 validation problem",
+        "409 alias in use",
+        "429 rate limited"
+      ]
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/urls/{code}",
+      "description": "Link metadata",
+      "responses": [
+        "200 UrlResponse",
+        "404"
+      ]
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/urls/{code}/stats",
+      "description": "Click analytics (total, per day, top referrers); ?days=1..365, default 30",
+      "responses": [
+        "200 UrlStatsResponse",
+        "404"
+      ]
+    },
+    {
+      "method": "GET",
+      "route": "/{code}",
+      "description": "Redirect to the target URL and record the click asynchronously",
+      "responses": [
+        "302 Location",
+        "404"
+      ]
+    }
+  ],
+  "nfrPatterns": [
+    {
+      "nfr": "Read-heavy redirects (~100 reads per write), p95 latency",
+      "pattern": "Cache-aside with TTL",
+      "buildingBlock": "ICacheService.GetOrCreateAsync in UrlService.ResolveAsync",
+      "test": "UrlApiTests.Redirect_returns_302_to_target_and_unknown_code_returns_404; /ops/stats hit ratio under LoadGen"
+    },
+    {
+      "nfr": "Analytics must not slow redirects",
+      "pattern": "Asynchronous write-behind, batched",
+      "buildingBlock": "IBackgroundQueue<ClickEvent> + ClickRecorder (IBatchHandler)",
+      "test": "UrlApiTests.Clicks_are_recorded_asynchronously_and_reported_in_stats"
+    },
+    {
+      "nfr": "Burst protection for analytics",
+      "pattern": "Bounded queue with load shedding",
+      "buildingBlock": "QueueOptions.Capacity (Analytics:QueueCapacity)",
+      "test": "PlatformTests.Full_queue_drops_and_counts_instead_of_blocking"
+    },
+    {
+      "nfr": "Horizontal scale-out / multiple instances",
+      "pattern": "Stateless instances; random IDs + unique constraint + retry on collision",
+      "buildingBlock": "Base62CodeGenerator + unique index + UrlService retry loop",
+      "test": "UrlApiTests.Parallel_creates_never_produce_duplicate_codes"
+    },
+    {
+      "nfr": "Cache outage",
+      "pattern": "Circuit breaker + graceful degradation",
+      "buildingBlock": "ResilientCacheService (platform)",
+      "test": "PlatformTests.Cache_failures_degrade_to_source_and_open_the_circuit"
+    },
+    {
+      "nfr": "Abuse of anonymous link creation",
+      "pattern": "Rate limiting per client + validate at the edge",
+      "buildingBlock": "Platform rate limiter; UrlValidator",
+      "test": "PlatformTests.Rate_limiter_returns_429_when_client_exceeds_window; UrlUnitTests.Invalid_urls_are_rejected"
+    },
+    {
+      "nfr": "Privacy (analytics)",
+      "pattern": "Data minimisation",
+      "buildingBlock": "ClickEvent stores referrer host + UA family only",
+      "test": "UrlUnitTests.User_agent_family_is_classified; schema review"
+    },
+    {
+      "nfr": "Data growth (click events)",
+      "pattern": "Aggregate counters + bounded stats window",
+      "buildingBlock": "ShortUrl.ClickCount; stats window 1-365 days",
+      "test": "Capacity report storage check"
+    },
+    {
+      "nfr": "Transient SQLite busy/locked",
+      "pattern": "Retry with backoff + jitter",
+      "buildingBlock": "IDbExecutor in EfUrlRepository and BatchingWorker",
+      "test": "Platform IDbExecutor transient classification"
+    }
+  ],
+  "decisions": [
+    {
+      "title": "302 instead of 301 redirects",
+      "decision": "Return 302 Found for redirects.",
+      "rationale": "301 is cached by browsers, so repeat clicks would never reach the service and analytics would undercount.",
+      "alternatives": "301 (cacheable, less load but breaks analytics); 307 (equivalent for GET)."
+    },
+    {
+      "title": "Random base62 codes instead of a sequential counter",
+      "decision": "7-character codes from a CSPRNG; unique index + up to 5 retries on collision.",
+      "rationale": "No coordination between instances (scale-out), codes are not enumerable; 62^7 ≈ 3.5e12 keeps collisions negligible.",
+      "alternatives": "DB sequence + base62 (needs a single sequence, enumerable); hash of URL (same URL → same code, collision handling still needed)."
+    },
+    {
+      "title": "Asynchronous, batched click recording",
+      "decision": "Redirects enqueue click events; a background worker writes them in batches of up to 200 or every 500 ms.",
+      "rationale": "Keeps the hot path to a cache lookup; one transaction per batch instead of one per click relieves the single SQLite writer.",
+      "alternatives": "Synchronous insert per redirect (simple, but couples redirect latency to DB writes); external broker (durable, needed on Kubernetes, overkill locally)."
+    },
+    {
+      "title": "Denormalised click counter",
+      "decision": "Maintain ShortUrl.ClickCount alongside raw click events.",
+      "rationale": "Total clicks are read often; avoids COUNT(*) over a growing table.",
+      "alternatives": "Always aggregate from events (simpler, slower as data grows)."
+    }
+  ],
+  "schemaChange": false,
+  "risks": [
+    "Clicks in the in-process queue are lost if the process crashes before a flush (accepted locally; use a durable broker on Kubernetes).",
+    "Per-instance memory cache can serve a deleted/changed link until TTL expiry when several instances run (no delete/edit in this version; Redis removes the issue).",
+    "Anonymous creation can be abused for spam/phishing links; mitigated only by rate limiting in this version."
+  ]
+}

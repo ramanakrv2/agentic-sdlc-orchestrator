@@ -1,0 +1,12 @@
+bin/
+obj/
+TestResults/
+.vs/
+*.user
+.orchestrator/
+logs/
+llm-cache/pending/
+llm-cache/recorded/
+workspace/*
+!workspace/Directory.Build.props
+**/data/*.db*

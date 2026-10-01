@@ -1,0 +1,7 @@
+{
+  "kind": "greenfield",
+  "confidence": 1,
+  "rationale": "New project requested explicitly (--new).",
+  "candidates": [],
+  "decidedBy": "operator"
+}

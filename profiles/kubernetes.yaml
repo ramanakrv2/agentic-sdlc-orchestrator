@@ -1,0 +1,29 @@
+id: kubernetes
+name: Kubernetes (multi-node, autoscaled)
+rank: 3
+capacity:
+  maxPeakRps: 50000
+  maxWriteRps: 5000
+  maxStorageGb: 10000
+  maxAvailability: 99.95
+  horizontalScaling: true
+  basis: "HPA 3-20 pods across zones, managed PostgreSQL with read replicas, Redis cluster, durable broker for analytics."
+providers:
+  database: Postgres (managed, read replicas)
+  cache: Redis (cluster)
+  queue: RabbitMQ/Kafka (durable)
+strategies:
+  - "HorizontalPodAutoscaler on CPU (and RPS via custom metrics) with minReplicas 3 across zones."
+  - "Readiness/liveness probes on /health/ready and /health/live; rolling updates with maxUnavailable 0."
+  - "PodDisruptionBudget keeps at least 2 pods during node maintenance."
+  - "Redis shared cache + distributed rate limiting so limits hold across pods."
+  - "Analytics moved from the in-process queue to a durable broker so clicks survive pod restarts."
+  - "Read replicas for stats queries; primary for writes."
+artifacts:
+  - Dockerfile
+  - deploy/k8s/deployment.yaml
+  - deploy/k8s/service.yaml
+  - deploy/k8s/hpa.yaml
+  - deploy/k8s/pdb.yaml
+  - deploy/k8s/configmap.yaml
+validation: "Manifests generated and statically checked (probes, resource limits, immutable tags, HPA bounds, secrets via secretKeyRef); no cluster required."
